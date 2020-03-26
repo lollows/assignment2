@@ -194,13 +194,16 @@ class FullyConnectedNet(object):
         for i in np.arange(self.num_layers):
             if i < self.num_layers - 1:
                 if i == 0:
-                    self.params[f'W{i + 1}'] = weight_scale * np.random.randn(input_dim, hidden_dims[i]).astype(dtype, copy=False)
+                    self.params[f'W{i + 1}'] = weight_scale * np.random.randn(input_dim, hidden_dims[i])
                 else:
-                    self.params[f'W{i + 1}'] = weight_scale * np.random.randn(hidden_dims[i - 1], hidden_dims[i]).astype(dtype, copy=False)
-                self.params[f'b{i + 1}'] = np.zeros(hidden_dims[i]).astype(dtype, copy=False)
+                    self.params[f'W{i + 1}'] = weight_scale * np.random.randn(hidden_dims[i - 1], hidden_dims[i])
+                self.params[f'b{i + 1}'] = np.zeros(hidden_dims[i])
+                if self.normalization == 'batchnorm':
+                    self.params[f'gamma{i + 1}'] = np.ones(hidden_dims[i])
+                    self.params[f'beta{i + 1}'] = np.zeros(hidden_dims[i])
             else:
-                self.params[f'W{i + 1}'] = weight_scale * np.random.randn(hidden_dims[i - 1], num_classes).astype(dtype, copy=False)
-                self.params[f'b{i + 1}'] = np.zeros(num_classes).astype(dtype, copy=False)
+                self.params[f'W{i + 1}'] = weight_scale * np.random.randn(hidden_dims[i - 1], num_classes)
+                self.params[f'b{i + 1}'] = np.zeros(num_classes)
 
                 # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -263,19 +266,20 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        out = {}
         cache = {}
         for i in np.arange(self.num_layers):
             if i < self.num_layers - 1:
                 if i == 0:
-                    out[f'layer_out{i + 1}'], cache[f'layer_cache{i + 1}'] = affine_relu_forward(X, self.params[f'W{i + 1}'], self.params[f'b{i + 1}'])
+                    a, cache[f'affine_cache{i + 1}'] = affine_forward(X, self.params[f'W{i + 1}'], self.params[f'b{i + 1}'])
                 else:
-                    out[f'layer_out{i + 1}'], cache[f'layer_cache{i + 1}'] = affine_relu_forward(out[f'layer_out{i}'], self.params[f'W{i + 1}'], self.params[f'b{i + 1}'])
+                    a, cache[f'affine_cache{i + 1}'] = affine_forward(a, self.params[f'W{i + 1}'], self.params[f'b{i + 1}'])
+                if self.normalization=='batchnorm':
+                    a, cache[f'batch_cache{i + 1}'] = batchnorm_forward(a, self.params[f'gamma{i + 1}'], self.params[f'beta{i + 1}'], self.bn_params[i])
+                a, cache[f'relu_cache{i + 1}'] = relu_forward(a)
                 if self.use_dropout:
-                    out[f'layer_out{i + 1}'], cache[f'drop_cache{i + 1}'] = dropout_forward(out[f'layer_out{i + 1}'], self.dropout_param)
+                    a, cache[f'drop_cache{i + 1}'] = dropout_forward(a, self.dropout_param)
             else:
-                out[f'layer_out{i + 1}'], cache[f'layer_cache{i + 1}'] = affine_forward(out[f'layer_out{i}'], self.params[f'W{i + 1}'], self.params[f'b{i + 1}'])
-        scores = out[f'layer_out{self.num_layers}']
+                scores, cache[f'affine_cache{i + 1}'] = affine_forward(a, self.params[f'W{i + 1}'], self.params[f'b{i + 1}'])
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -302,16 +306,18 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        dout = {}
         for i in np.arange(self.num_layers - 1, -1, -1):
             if i == self.num_layers - 1:
                 loss, grads_out = softmax_loss(scores, y)
-                dout[f'layer_dout{i + 1}'], grads[f'W{i + 1}'], grads[f'b{i + 1}'] = affine_backward(grads_out, cache[f'layer_cache{i + 1}'])
+                da, grads[f'W{i + 1}'], grads[f'b{i + 1}'] = affine_backward(grads_out, cache[f'affine_cache{i + 1}'])
             else:
                 # import pdb; pdb.set_trace()
                 if self.use_dropout:
-                    dout[f'layer_dout{i + 2}'] = dropout_backward(dout[f'layer_dout{i + 2}'], cache[f'drop_cache{i + 1}'])
-                dout[f'layer_dout{i + 1}'], grads[f'W{i + 1}'], grads[f'b{i + 1}'] = affine_relu_backward(dout[f'layer_dout{i + 2}'], cache[f'layer_cache{i + 1}'])
+                    da = dropout_backward(da, cache[f'drop_cache{i + 1}'])
+                da = relu_backward(da, cache[f'relu_cache{i + 1}'])
+                if self.normalization=='batchnorm':
+                   da, grads[f'gamma{i + 1}'], grads[f'beta{i + 1}'] = batchnorm_backward(da, cache[f'batch_cache{i + 1}'])
+                da, grads[f'W{i + 1}'], grads[f'b{i + 1}'] = affine_backward(da, cache[f'affine_cache{i + 1}'])
             grads[f'W{i + 1}'] += 2 * self.reg * self.params[f'W{i + 1}']
             loss += self.reg * np.sum(self.params[f'W{i + 1}'] * self.params[f'W{i + 1}'])
 

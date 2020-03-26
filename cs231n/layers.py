@@ -196,7 +196,14 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        sample_mean = np.mean(x, axis=0)
+        sample_var = np.var(x, axis=0)
+        running_mean = sample_mean
+        running_var = sample_var
+        xbar = (x - running_mean) / np.sqrt(running_var + eps)
+        out = gamma * xbar + beta
+        cache = (x, xbar, gamma, sample_mean, sample_var, eps)
+
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -211,7 +218,12 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        sample_mean = np.mean(x, axis=0)
+        sample_var = np.var(x, axis=0)
+        running_mean = momentum * running_mean + (1 - momentum) * sample_mean
+        running_var = momentum * running_var + (1 - momentum) * sample_var
+        xbar = (x - running_mean) / np.sqrt(running_var + eps)
+        out = gamma * xbar + beta
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -253,7 +265,14 @@ def batchnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, xbar, gamma, sample_mean, sample_var, eps = cache
+    N = x.shape[0]
+    dbeta = np.sum(dout, axis=0) #(D,)
+    dgamma = (dout * xbar).sum(axis=0) #(D,)
+    dxbar = dout * gamma #(N, D)
+    dsample_var = (dxbar * (x - sample_mean) * (-1/2) * (sample_var + eps) ** (-3/2)).sum(axis=0) #(D,)
+    dsample_mean = (- dxbar / np.sqrt(sample_var + eps)).sum(axis=0) + dsample_var * (x - sample_mean).sum(axis=0) * (-2/N) #(D,)
+    dx = dxbar / np.sqrt(sample_var + eps) + dsample_var * (x - sample_mean) * (2/N) + dsample_mean / N
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
