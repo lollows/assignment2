@@ -196,14 +196,13 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        sample_mean = np.mean(x, axis=0)
-        sample_var = np.var(x, axis=0)
+        sample_mean = np.mean(x, axis=0, keepdims=True)
+        sample_var = np.var(x, axis=0, keepdims=True)
         running_mean = sample_mean
         running_var = sample_var
         xbar = (x - running_mean) / np.sqrt(running_var + eps)
         out = gamma * xbar + beta
         cache = (x, xbar, gamma, sample_mean, sample_var, eps)
-
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -267,12 +266,13 @@ def batchnorm_backward(dout, cache):
 
     x, xbar, gamma, sample_mean, sample_var, eps = cache
     N = x.shape[0]
-    dbeta = np.sum(dout, axis=0) #(D,)
-    dgamma = (dout * xbar).sum(axis=0) #(D,)
-    dxbar = dout * gamma #(N, D)
-    dsample_var = (dxbar * (x - sample_mean) * (-1/2) * (sample_var + eps) ** (-3/2)).sum(axis=0) #(D,)
-    dsample_mean = (- dxbar / np.sqrt(sample_var + eps)).sum(axis=0) + dsample_var * (x - sample_mean).sum(axis=0) * (-2/N) #(D,)
-    dx = dxbar / np.sqrt(sample_var + eps) + dsample_var * (x - sample_mean) * (2/N) + dsample_mean / N
+    dbeta = np.sum(dout, axis=0)  # (D,)
+    dgamma = (dout * xbar).sum(axis=0)  # (D,)
+    dxbar = dout * gamma  # (N, D)
+    dsample_var = (dxbar * (x - sample_mean) * (-1 / 2) * (sample_var + eps) ** (-3 / 2)).sum(axis=0)  # (D,)
+    dsample_mean = (- dxbar / np.sqrt(sample_var + eps)).sum(axis=0) + dsample_var * (x - sample_mean).sum(axis=0) * (
+                -2 / N)  # (D,)
+    dx = dxbar / np.sqrt(sample_var + eps) + dsample_var * (x - sample_mean) * (2 / N) + dsample_mean / N
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -353,7 +353,11 @@ def layernorm_forward(x, gamma, beta, ln_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    sample_mean = np.mean(x, axis=1, keepdims=True)  # （N, 1）
+    sample_var = np.var(x, axis=1, keepdims=True)  # (N, 1)
+    xbar = (x - sample_mean) / np.sqrt(sample_var + eps)  # (N, D)
+    out = gamma * xbar + beta  # （N, D）
+    cache = (x, xbar, gamma, sample_mean, sample_var, eps)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -388,7 +392,14 @@ def layernorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, xbar, gamma, sample_mean, sample_var, eps = cache
+    D = x.shape[1]
+    dbeta = np.sum(dout, axis=0)  # (D,)
+    dgamma = (dout * xbar).sum(axis=0)  # (D,)
+    dxbar = dout * gamma  # (N, D)
+    dsample_var = (dxbar * (x - sample_mean) * (-1 / 2) * (sample_var + eps) ** (-3 / 2)).sum(axis=1, keepdims=True)  # (N, 1)
+    dsample_mean = (- dxbar / np.sqrt(sample_var + eps)).sum(axis=1, keepdims=True) + dsample_var * (x - sample_mean).sum(axis=1, keepdims=True) * (-2 / D)  # (N, 1)
+    dx = dxbar / np.sqrt(sample_var + eps) + dsample_var * (x - sample_mean) * (2 / D) + dsample_mean / D  # (N, D)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -437,7 +448,8 @@ def dropout_forward(x, dropout_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        mask = (np.random.rand(*x.shape) < p) / p
+        out = x * mask
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -449,7 +461,7 @@ def dropout_forward(x, dropout_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        out = x
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -480,7 +492,7 @@ def dropout_backward(dout, cache):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        dx = dout * mask
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -722,7 +734,7 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     - cache: Values needed for the backward pass
     """
     out, cache = None, None
-    eps = gn_param.get('eps',1e-5)
+    eps = gn_param.get('eps', 1e-5)
     ###########################################################################
     # TODO: Implement the forward pass for spatial group normalization.       #
     # This will be extremely similar to the layer norm implementation.        #
