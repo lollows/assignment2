@@ -271,7 +271,7 @@ def batchnorm_backward(dout, cache):
     dxbar = dout * gamma  # (N, D)
     dsample_var = (dxbar * (x - sample_mean) * (-1 / 2) * (sample_var + eps) ** (-3 / 2)).sum(axis=0)  # (D,)
     dsample_mean = (- dxbar / np.sqrt(sample_var + eps)).sum(axis=0) + dsample_var * (x - sample_mean).sum(axis=0) * (
-                -2 / N)  # (D,)
+            -2 / N)  # (D,)
     dx = dxbar / np.sqrt(sample_var + eps) + dsample_var * (x - sample_mean) * (2 / N) + dsample_mean / N
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -397,8 +397,10 @@ def layernorm_backward(dout, cache):
     dbeta = np.sum(dout, axis=0)  # (D,)
     dgamma = (dout * xbar).sum(axis=0)  # (D,)
     dxbar = dout * gamma  # (N, D)
-    dsample_var = (dxbar * (x - sample_mean) * (-1 / 2) * (sample_var + eps) ** (-3 / 2)).sum(axis=1, keepdims=True)  # (N, 1)
-    dsample_mean = (- dxbar / np.sqrt(sample_var + eps)).sum(axis=1, keepdims=True) + dsample_var * (x - sample_mean).sum(axis=1, keepdims=True) * (-2 / D)  # (N, 1)
+    dsample_var = (dxbar * (x - sample_mean) * (-1 / 2) * (sample_var + eps) ** (-3 / 2)).sum(axis=1,
+                                                                                              keepdims=True)  # (N, 1)
+    dsample_mean = (- dxbar / np.sqrt(sample_var + eps)).sum(axis=1, keepdims=True) + dsample_var * (
+            x - sample_mean).sum(axis=1, keepdims=True) * (-2 / D)  # (N, 1)
     dx = dxbar / np.sqrt(sample_var + eps) + dsample_var * (x - sample_mean) * (2 / D) + dsample_mean / D  # (N, D)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -538,7 +540,22 @@ def conv_forward_naive(x, w, b, conv_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+    F, _, HH, WW = w.shape
+    stride, pad = conv_param['stride'], conv_param['pad']
+
+    npad = ((0, 0), (0, 0), (pad, pad), (pad, pad))
+    xpad = np.pad(x, npad, mode='constant', constant_values=0)  # (N, C, H+2*pad, W+2*pad)
+    Hbar = int(1 + (H + 2 * pad - HH) / stride)
+    Wbar = int(1 + (W + 2 * pad - WW) / stride)
+    out = np.zeros((N, F, Hbar, Wbar))
+    for i in range(N):
+        for j in range(Hbar):
+            for k in range(Wbar):
+                # # debug here
+                # import pdb; pdb.set_trace()
+                mask = xpad[i, :, j * stride:j * stride + HH, k * stride:k * stride + WW]  # (C, HH, WW)
+                out[i, :, j, k] = np.sum(mask * w, axis=(1, 2, 3)) + b  # (F,)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -553,13 +570,13 @@ def conv_backward_naive(dout, cache):
     A naive implementation of the backward pass for a convolutional layer.
 
     Inputs:
-    - dout: Upstream derivatives.
+    - dout: Upstream derivatives.(N, F, H', W')
     - cache: A tuple of (x, w, b, conv_param) as in conv_forward_naive
 
     Returns a tuple of:
-    - dx: Gradient with respect to x
-    - dw: Gradient with respect to w
-    - db: Gradient with respect to b
+    - dx: Gradient with respect to x (N, C, H, W)
+    - dw: Gradient with respect to w (F, C, HH, WW)
+    - db: Gradient with respect to b (F,)
     """
     dx, dw, db = None, None, None
     ###########################################################################
@@ -567,7 +584,49 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, w, b, conv_param = cache
+    N, F, Hbar, Wbar = dout.shape
+    _, C, H, W = x.shape
+    HH, WW = w.shape[2], w.shape[3]
+    stride, pad = conv_param['stride'], conv_param['pad']
+    npad = ((0, 0), (0, 0), (pad, pad), (pad, pad))
+
+    db = dout.sum(axis=(0, 2, 3))  # (F,)
+    x_pad = np.pad(x, npad, mode='constant', constant_values=0)  # (N, C, H+2*pad, W+2*pad)
+
+    # # 下述方法仅适用于stride=1的情形，当stride>1时，需要对dout进行dilate,具体参考这篇文章
+    # # https://medium.com/@mayank.utexas/backpropagation-for-convolution-with-strides-fb2f2efc4faa
+    # dw = np.zeros((F, C, HH, WW))
+    # for i in range(F):
+    #     for j in range(HH):
+    #         for k in range(WW):
+    #             mask = x_pad[:, :, j * stride:j * stride + Hbar, k * stride:k * stride + Wbar]  # (N, C, Hbar, Wbar)
+    #             dw[i, :, j, k] = np.sum(mask * dout[:, i:i + 1, :, :], axis=(0, 2, 3))  # (C,)
+
+    # # 下述方法仅适用于stride=1的情形，当stride>1时，需要对dout进行dilate与padding,具体参考这篇文章
+    # # https://medium.com/@mayank.utexas/backpropagation-for-convolution-with-strides-8137e4fc2710
+    # w_rot180 = np.rot90(w, 2, axes=(2, 3))  # (F, C, HH, WW)
+    # dout_pad = np.pad(dout, npad, mode='constant', constant_values=0)  # (N, F, H'+2*pad, W'+2*pad)
+    # dx = np.zeros((N, C, H, W))
+    # for i in range(N):
+    #     for j in range(H):
+    #         for k in range(W):
+    #             # import pdb; pdb.set_trace()
+    #             mask = dout_pad[i, :, j * stride:j * stride + HH, k * stride:k * stride + WW]  # (F, HH, WW)
+    #             dx[i, :, j, k] = np.sum(mask[:, np.newaxis, :, :] * w_rot180, axis=(0, 2, 3))  # (C,)
+
+    dx = np.zeros((N, C, H, W))
+    dx_pad = np.pad(dx, npad, mode='constant', constant_values=0)  # (N, C, H+2*pad, W+2*pad)
+    dw = np.zeros((F, C, HH, WW))
+    for j in range(Hbar):
+        for k in range(Wbar):
+            for i in range(N):
+                dx_pad[i, :, j * stride:j * stride + HH, k * stride:k * stride + WW] += \
+                    np.sum((dout[i, :, j, k])[:, None, None, None] * w, axis=0)  # (C, HH, WW)
+            for s in range(F):
+                mask = x_pad[:, :, j * stride:j * stride + HH, k * stride:k * stride + WW]  # (N, C, HH, WW)
+                dw[s, :, :, :] += np.sum(dout[:, s:s+1, j:j+1, k:k+1] * mask, axis=0)  # (C, HH, WW)
+    dx = dx_pad[:, :, pad:-pad, pad:-pad]
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -601,7 +660,16 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+    pool_height, pool_width, stride = pool_param['pool_height'], pool_param['pool_width'], pool_param['stride']
+    Hbar = int(1 + (H - pool_height) / stride)
+    Wbar = int(1 + (W - pool_width) / stride)
+    out = np.zeros((N, C, Hbar, Wbar))
+    for j in range(Hbar):
+        for k in range(Wbar):
+            mask = x[:, :, j * stride:j * stride + pool_height,
+                   k * stride:k * stride + pool_width]  # (N, C, pool_height, pool_width)
+            out[:, :, j, k] = np.max(mask, axis=(2, 3))  # (N, C)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -616,11 +684,11 @@ def max_pool_backward_naive(dout, cache):
     A naive implementation of the backward pass for a max-pooling layer.
 
     Inputs:
-    - dout: Upstream derivatives
+    - dout: Upstream derivatives (N, C, H', W')
     - cache: A tuple of (x, pool_param) as in the forward pass.
 
     Returns:
-    - dx: Gradient with respect to x
+    - dx: Gradient with respect to x (N, C, H, W)
     """
     dx = None
     ###########################################################################
@@ -628,7 +696,17 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, pool_param = cache
+    N, C, Hbar, Wbar = dout.shape
+    pool_height, pool_width, stride = pool_param['pool_height'], pool_param['pool_width'], pool_param['stride']
+
+    dx = np.zeros_like(x)
+    # MaxPool(最大池化)出现多个最大值时，只取第一个最大值的位置
+    for j in range(Hbar):
+        for k in range(Wbar):
+            mask = x[:, :, j * stride:j * stride + pool_height, k * stride:k * stride + pool_width]  # (N, C, pool_height, pool_width)
+            index_max = np.max(mask, axis=(2, 3), keepdims=True) == mask  # (N, C, pool_height, pool_width) -> bool
+            dx[:, :, j * stride:j * stride + pool_height, k * stride:k * stride + pool_width] += dout[:,:,j:j+1,k:k+1] * index_max
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
